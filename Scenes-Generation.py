@@ -168,7 +168,7 @@ def save_to_s3(data, bucket, key):
 def process_story(story_text, request_id=None):
     """Refactored logic from lambda_handler to be environment-agnostic"""
     if not request_id:
-        request_id = str(uuid.uuid4())
+        request_id = os.getenv("REQUEST_ID")
 
     global_context = extract_context(story_text)
     chunks = chunk_text(story_text)
