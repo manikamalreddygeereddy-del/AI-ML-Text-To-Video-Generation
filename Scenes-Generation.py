@@ -171,7 +171,6 @@ def process_story(story_text, request_id=None):
         request_id = os.getenv("REQUEST_ID")
 
     global_context = extract_context(story_text)
-    hook = generate_hook(story_text, global_context)
     chunks = chunk_text(story_text)
 
     all_scenes_nested = [None] * len(chunks)
