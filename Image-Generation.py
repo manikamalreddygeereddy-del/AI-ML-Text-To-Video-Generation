@@ -44,7 +44,7 @@ def process_video_generation():
     event_str = os.getenv("EVENT_DATA", "{}")
     event = json.loads(event_str)
 
-    s3_key = event.get("s3_key")
+    s3_key = event.get("scene_output", {}).get("s3_key")
     if not s3_key:
         raise ValueError("No s3_key found in input event")
 
