@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the script
 COPY Scenes-Generation.py .
+COPY Image-Generation.py .
 
 # Run the script when the container starts
 CMD ["python3.14", "Scenes-Generation.py"]

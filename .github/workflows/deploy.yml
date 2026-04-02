@@ -2,7 +2,7 @@ name: Deploy to ECR
 
 on:
   push:
-    branches: [ main ]  # Runs every time you push to the 'main' branch
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -16,17 +16,24 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # <-- Change this to your region
+          aws-region: us-east-1
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Tag, and Push
+      - name: Build and Push to Both Repos
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: bedrock-scene-generator # <-- Change to your ECR repo name
           IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # 1. Build the image once (it contains both scripts)
+          docker build -t common-image .
+
+          # 2. Tag and Push for Scene Generation
+          docker tag common-image $ECR_REGISTRY/bedrock-scene-generation:$IMAGE_TAG
+          docker push $ECR_REGISTRY/bedrock-scene-generation:$IMAGE_TAG
+
+          # 3. Tag and Push for Image Generation
+          docker tag common-image $ECR_REGISTRY/bedrock-image-generation:$IMAGE_TAG
+          docker push $ECR_REGISTRY/bedrock-image-generation:$IMAGE_TAG
