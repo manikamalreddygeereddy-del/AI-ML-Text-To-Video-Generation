@@ -31,9 +31,9 @@ jobs:
           docker build -t common-image .
 
           # 2. Tag and Push for Scene Generation
-          docker tag common-image $ECR_REGISTRY/bedrock-scene-generation:$IMAGE_TAG
-          docker push $ECR_REGISTRY/bedrock-scene-generation:$IMAGE_TAG
+          docker tag common-image $ECR_REGISTRY/bedrock-scene-generator:$IMAGE_TAG
+          docker push $ECR_REGISTRY/bedrock-scene-generator:$IMAGE_TAG
 
           # 3. Tag and Push for Image Generation
-          docker tag common-image $ECR_REGISTRY/bedrock-image-generation:$IMAGE_TAG
-          docker push $ECR_REGISTRY/bedrock-image-generation:$IMAGE_TAG
+          docker tag common-image $ECR_REGISTRY/bedrock-image-generator:$IMAGE_TAG
+          docker push $ECR_REGISTRY/bedrock-image-generator:$IMAGE_TAG
