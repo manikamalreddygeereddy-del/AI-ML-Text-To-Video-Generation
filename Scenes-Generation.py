@@ -196,6 +196,11 @@ def process_story(story_text, request_id=None):
                 all_scenes.append(scene)
                 scene_counter += 1
 
+    category_distribution = compute_category_distribution_with_llm(all_scenes)
+
+    # 6. Assign tags to each scene
+    all_scenes = assign_tags_from_ranges(all_scenes, category_distribution)
+
     output = {
         "request_id": request_id,
         "context": global_context,
@@ -215,3 +220,68 @@ if __name__ == "__main__":
     print("Starting scene generation...")
     result = process_story(test_story)
     print(f"Done! Result saved to S3.")
+
+
+
+#------------------------------------
+#8. Category distribution
+#------------------------------------
+def compute_category_distribution_with_llm(scenes):
+    total_scenes = len(scenes)
+
+    prompt = f"""
+You are a cinematic story structure expert.
+
+Given a list of scenes, decide the narrative boundaries.
+
+TASK:
+Determine the scene ranges for each category:
+- hook
+- setup
+- build
+- climax
+- aftermath
+- ending
+
+RULES:
+- Use scene_number to define ranges
+- Ensure full coverage from scene 1 to scene {total_scenes}
+- No overlaps
+- Must follow order:
+  hook → setup → build → climax → aftermath → ending
+- Keep ranges natural based on story progression
+
+Return ONLY JSON:
+{{
+  "hook": {{ "start": int, "end": int }},
+  "setup": {{ "start": int, "end": int }},
+  "build": {{ "start": int, "end": int }},
+  "climax": {{ "start": int, "end": int }},
+  "aftermath": {{ "start": int, "end": int }},
+  "ending": {{ "start": int, "end": int }}
+}}
+
+Scenes:
+{json.dumps(scenes)}
+"""
+
+    output = call_bedrock(prompt, 9000)
+    cleaned = output.replace("```json", "").replace("```", "").strip()
+    return json.loads(cleaned)
+
+
+
+
+# ---------------------------
+# 7. Adding tags
+# ---------------------------
+def assign_tags_from_ranges(scenes, ranges):
+    for scene in scenes:
+        num = scene["scene_number"]
+
+        for category, r in ranges.items():
+            if r["start"] <= num <= r["end"]:
+                scene["tag"] = category
+                break
+
+    return scenes
