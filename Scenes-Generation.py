@@ -256,7 +256,7 @@ def process_story(story_text, request_id=None):
     for scene_list in all_scenes_nested:
         if scene_list:
             for scene in scene_list:
-                scene["scene_number"] = scene_counter
+                scene["scene_number"] = int(scene_counter)
                 all_scenes.append(scene)
                 scene_counter += 1
 
