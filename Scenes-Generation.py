@@ -165,64 +165,6 @@ def save_to_s3(data, bucket, key):
     print(f"Successfully saved output to s3://{bucket}/{key}")
 
 
-def process_story(story_text, request_id=None):
-    """Refactored logic from lambda_handler to be environment-agnostic"""
-    if not request_id:
-        request_id = os.getenv("REQUEST_ID")
-
-    global_context = extract_context(story_text)
-    chunks = chunk_text(story_text)
-
-    all_scenes_nested = [None] * len(chunks)
-
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        future_to_index = {
-            executor.submit(generate_scenes, chunk, global_context, ""): i
-            for i, chunk in enumerate(chunks)
-        }
-        for future in as_completed(future_to_index):
-            index = future_to_index[future]
-            try:
-                all_scenes_nested[index] = future.result()
-            except Exception as exc:
-                print(f'Chunk {index} failed: {exc}')
-
-    all_scenes = []
-    scene_counter = 1
-    for scene_list in all_scenes_nested:
-        if scene_list:
-            for scene in scene_list:
-                scene["scene_number"] = scene_counter
-                all_scenes.append(scene)
-                scene_counter += 1
-
-    category_distribution = compute_category_distribution_with_llm(all_scenes)
-
-    # 6. Assign tags to each scene
-    all_scenes = assign_tags_from_ranges(all_scenes, category_distribution)
-
-    output = {
-        "request_id": request_id,
-        "context": global_context,
-        "scenes": all_scenes
-    }
-
-    bucket_name = os.getenv("S3_BUCKET", "canyouimagine-video-assets")
-    s3_key = f"outputs/{request_id}/scenes.json"
-    save_to_s3(output, bucket_name, s3_key)
-
-    return output
-
-
-if __name__ == "__main__":
-    # For ECR/Container: Read story from an Environment Variable or a test string
-    test_story = os.getenv("STORY_INPUT", "A brave knight climbs a mountain to find a dragon.")
-    print("Starting scene generation...")
-    result = process_story(test_story)
-    print(f"Done! Result saved to S3.")
-
-
-
 #------------------------------------
 #8. Category distribution
 #------------------------------------
@@ -285,3 +227,60 @@ def assign_tags_from_ranges(scenes, ranges):
                 break
 
     return scenes
+
+
+def process_story(story_text, request_id=None):
+    """Refactored logic from lambda_handler to be environment-agnostic"""
+    if not request_id:
+        request_id = os.getenv("REQUEST_ID")
+
+    global_context = extract_context(story_text)
+    chunks = chunk_text(story_text)
+
+    all_scenes_nested = [None] * len(chunks)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_to_index = {
+            executor.submit(generate_scenes, chunk, global_context, ""): i
+            for i, chunk in enumerate(chunks)
+        }
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                all_scenes_nested[index] = future.result()
+            except Exception as exc:
+                print(f'Chunk {index} failed: {exc}')
+
+    all_scenes = []
+    scene_counter = 1
+    for scene_list in all_scenes_nested:
+        if scene_list:
+            for scene in scene_list:
+                scene["scene_number"] = scene_counter
+                all_scenes.append(scene)
+                scene_counter += 1
+
+    category_distribution = compute_category_distribution_with_llm(all_scenes)
+
+    # 6. Assign tags to each scene
+    all_scenes = assign_tags_from_ranges(all_scenes, category_distribution)
+
+    output = {
+        "request_id": request_id,
+        "context": global_context,
+        "scenes": all_scenes
+    }
+
+    bucket_name = os.getenv("S3_BUCKET", "canyouimagine-video-assets")
+    s3_key = f"outputs/{request_id}/scenes.json"
+    save_to_s3(output, bucket_name, s3_key)
+
+    return output
+
+
+if __name__ == "__main__":
+    # For ECR/Container: Read story from an Environment Variable or a test string
+    test_story = os.getenv("STORY_INPUT", "A brave knight climbs a mountain to find a dragon.")
+    print("Starting scene generation...")
+    result = process_story(test_story)
+    print(f"Done! Result saved to S3.")
