@@ -81,7 +81,7 @@ def process_video_generation():
         }
 
         # Handle Generation with Retry Logic
-        max_retries = 5
+        max_retries = 10
         image_response = None
 
         for attempt in range(max_retries):
@@ -96,7 +96,7 @@ def process_video_generation():
                 error_code = e.response["Error"]["Code"]
 
                 if error_code == "ValidationException":
-                    print("⚠️ Content filter triggered. Rewriting with Claude...")
+                    print(f"⚠️ Content filter triggered. Rewriting with Claude...{consistent_prompt}")
                     safe_prompt = rewrite_prompt_with_claude(consistent_prompt)
                     request_payload["textToImageParams"]["text"] = safe_prompt
                     # Continues to next attempt loop with updated payload
