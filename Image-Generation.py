@@ -8,7 +8,8 @@ from botocore.exceptions import ClientError
 
 # Initialize clients
 s3 = boto3.client("s3")
-bedrock = boto3.client("bedrock-runtime")
+bedrock = boto3.client(service_name="bedrock-runtime",
+    region_name="us-west-2")
 
 
 def rewrite_prompt_with_claude(original_prompt):
@@ -87,7 +88,7 @@ def process_video_generation():
         for attempt in range(max_retries):
             try:
                 image_response = bedrock.invoke_model(
-                    modelId="amazon.titan-image-generator-v2:0",
+                    modelId="stability.sd3-5-large-v1:0",
                     body=json.dumps(request_payload)
                 )
                 break
