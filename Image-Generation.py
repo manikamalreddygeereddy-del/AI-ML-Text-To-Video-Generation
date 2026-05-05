@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 s3 = boto3.client("s3")
 bedrock = boto3.client(service_name="bedrock-runtime",
     region_name="us-west-2")
-
+bedrock_claude = boto3.client(service_name="bedrock-runtime")
 
 def rewrite_prompt_with_claude(original_prompt):
     """Use Claude to sanitize the prompt for Titan Image Generator"""
@@ -25,7 +25,7 @@ def rewrite_prompt_with_claude(original_prompt):
     {original_prompt}
     """
 
-    response = bedrock.invoke_model(
+    response = bedrock_claude.invoke_model(
         modelId="global.anthropic.claude-sonnet-4-20250514-v1:0",
         body=json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
