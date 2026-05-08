@@ -63,22 +63,19 @@ def process_video_generation():
     # 3. Iterate through scenes
     for scene in data["scenes"]:
         consistent_prompt = f"""
-        Cinematic digital illustration of
-        Narration scene: {scene['narration']}
-        Lighting: {scene['lighting']}
-        Camera angle: {scene['camera_angle']}
-        Mood: {scene['mood']}
-        """
+                Cinematic digital illustration of
+                Narration scene: {scene['narration']}
+                Visual Prompt: {scene['visual_prompt']}
+                Scene Description: {scene['description']}
+                Lighting: {scene['lighting']}
+                Camera angle: {scene['camera_angle']}
+                Mood: {scene['mood']}
+                """
 
         request_payload = {
-            "taskType": "TEXT_IMAGE",
-            "textToImageParams": {"text": consistent_prompt},
-            "imageGenerationConfig": {
-                "numberOfImages": 1,
-                "height": 640,
-                "width": 1152,
-                "cfgScale": 10.0
-            }
+            "prompt": consistent_prompt,
+            "mode": "text-to-image",
+            "aspect_ratio": "16:9"
         }
 
         # Handle Generation with Retry Logic
@@ -98,8 +95,9 @@ def process_video_generation():
 
                 if error_code == "ValidationException":
                     print(f"⚠️ Content filter triggered. Rewriting with Claude...{consistent_prompt}")
+                    print(f"{e.response}")
                     safe_prompt = rewrite_prompt_with_claude(consistent_prompt)
-                    request_payload["textToImageParams"]["text"] = safe_prompt
+                    request_payload["prompt"] = safe_prompt
                     # Continues to next attempt loop with updated payload
 
                 elif error_code == "ThrottlingException":
