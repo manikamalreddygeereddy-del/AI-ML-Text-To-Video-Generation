@@ -112,10 +112,12 @@ TASK:
 Divide the "STORY TO PROCESS" into cinematic scenes. Do not add new plot points.
 
 RULES:
+- **CRITICAL NARRATION RULE**: The "narration" field for the scenes must use the EXACT words from the "STORY TO PROCESS". Do not change the vocabulary, do not add theatrical flavor text, and do not expand the sentences. It must be a verbatim copy of the text being processed.
 - Maintain character consistency and story continuity.
 - Strictly adhere to the "STORY TO PROCESS"; do not invent new events.
 - **Important** Visuals: Focus 'visual_prompt' on cinematic lighting, environmental textures, and professional composition. Ensure all imagery is appropriate for a general, all-ages audience.
 - Return ONLY JSON (no preamble or conversational text).
+- **BRACKET RULE**: If the text contains descriptions inside brackets like `[...]`, do NOT include that bracketed text in the "narration" field. Treat brackets purely as visual hints for your "visual_prompt".
 
 Each scene must include:
 {{
@@ -124,7 +126,7 @@ Each scene must include:
   "description": string <Strictly within 10 words length only>,
   "characters": list,
   "visual_prompt": string <Strictly within 10 words length only>,
-  "narration": string,
+  "narration": string string <MUST BE VERBATIM FROM THE INPUT TEXT>,
   "camera_angle": string (one word),
   "mood": string (one word),
   "lighting": string (one word),
@@ -192,7 +194,6 @@ RULES:
 - Must follow order:
   hook → setup → build → climax → aftermath → ending
 - Keep ranges natural based on story progression
-- CRITICAL: Do not extrapolate, alter dialogue, or change historical facts provided in the "STORY TO PROCESS". If a detail isn't explicitly in the text, do not invent it.
 
 Return ONLY JSON:
 {{
