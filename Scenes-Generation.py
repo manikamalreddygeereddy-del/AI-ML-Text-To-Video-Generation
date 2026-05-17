@@ -192,6 +192,7 @@ RULES:
 - Must follow order:
   hook → setup → build → climax → aftermath → ending
 - Keep ranges natural based on story progression
+- CRITICAL: Do not extrapolate, alter dialogue, or change historical facts provided in the "STORY TO PROCESS". If a detail isn't explicitly in the text, do not invent it.
 
 Return ONLY JSON:
 {{
