@@ -230,22 +230,23 @@ def process_video_generation():
             f"using {reference_source}"
         )
 
-        request_payload = {
-            "prompt": consistent_prompt,
-            "aspect_ratio": "16:9",
-            "output_format": "png"
-        }
+
         if reference_image:
-            request_payload.update({
+            request_payload = {
+                "prompt": consistent_prompt,
                 "mode": "image-to-image",
                 "image": reference_image,
-                "strength": 0.35
-            })
+                "strength": 0.35,
+                "output_format": "png"
+            }
         else:
 
-            request_payload.update({
-                "mode": "text-to-image"
-            })
+            request_payload = {
+                "prompt": consistent_prompt,
+                "mode": "text-to-image",
+                "aspect_ratio": "16:9",
+                "output_format": "png"
+            }
 
         # Handle Generation with Retry Logic
         max_retries = 10
