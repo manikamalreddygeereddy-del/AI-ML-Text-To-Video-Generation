@@ -247,6 +247,7 @@ def process_video_generation():
                 "aspect_ratio": "16:9",
                 "output_format": "png"
             }
+            
 
         # Handle Generation with Retry Logic
         max_retries = 10
