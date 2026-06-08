@@ -6,175 +6,233 @@ import time
 import random
 from botocore.exceptions import ClientError
 
-# Initialize clients
 s3 = boto3.client("s3")
 bedrock = boto3.client(service_name="bedrock-runtime", region_name="us-west-2")
 bedrock_claude = boto3.client(service_name="bedrock-runtime")
 
+# ── Style anchor ────────────────────────────────────────────────────────────
+# This block is injected into EVERY scene prompt.
+# Changing it here changes the look of the whole video consistently.
+STYLE_ANCHOR = (
+    "Cinematic digital illustration, 16:9 aspect ratio. "
+    "Consistent art style: painterly, warm color grading, soft volumetric lighting. "
+    "Character designs must remain identical across all scenes. "
+    "No text overlays, no watermarks."
+)
+
+
 def rewrite_prompt_with_claude(original_prompt):
-    """Use Claude to sanitize the prompt for Titan Image Generator"""
-    rewrite_instruction = f"""
-    Rewrite the following image generation prompt to ensure it is completely safe,
-    non-violent, non-sensitive, and compliant with AI content policies.
-    Keep the meaning but remove or soften anything that could trigger filters.
-    Only and only return the rewritten prompt.
-    **Important** There should be only less than 500 characters in the prompt.
+    instruction = f"""
+    Rewrite the following image generation prompt to be safe, non-violent,
+    and compliant with AI content policies. Keep the meaning intact.
+    Return only the rewritten prompt, under 500 characters.
 
     Prompt:
     {original_prompt}
     """
-
     response = bedrock_claude.invoke_model(
         modelId="global.anthropic.claude-sonnet-4-20250514-v1:0",
         body=json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1000,
-            "messages": [{"role": "user", "content": rewrite_instruction}]
+            "messages": [{"role": "user", "content": instruction}]
         })
     )
-
-    result = json.loads(response["body"].read())
-    return result["content"][0]["text"]
+    return json.loads(response["body"].read())["content"][0]["text"]
 
 
-def build_request_payload(prompt, reference_image_b64=None):
+def build_character_description_prompt(character):
     """
-    Build the request payload.
-    If a reference image is provided, use image-to-image mode with low strength
-    so the new scene visually inherits style/characters from the previous one.
+    Build a neutral reference-sheet prompt for a single character.
+    Plain background + front-facing pose ensures the model captures
+    the character cleanly without scene clutter contaminating it.
     """
-    if reference_image_b64:
-        return {
-            "prompt": prompt,
-            "mode": "image-to-image",
-            "image": reference_image_b64,
-            "strength": 0.5,       # Low strength = strong reference to previous scene
-            "output_format": "png",
-            "aspect_ratio": "16:9"
-        }
-    else:
-        return {
-            "prompt": prompt,
-            "mode": "text-to-image",
-            "aspect_ratio": "16:9"
-        }
+    return (
+        f"{STYLE_ANCHOR} "
+        f"Character reference sheet. Full body portrait, neutral front-facing pose, "
+        f"plain white background, soft studio lighting. "
+        f"Character: {character['name']}. {character['description']}. "
+        f"Highly detailed face and costume. No other characters in frame."
+    )
 
 
-def generate_image_with_retry(bedrock_client, prompt, reference_image_b64=None):
+def build_scene_prompt(scene):
+    return (
+        f"{STYLE_ANCHOR} "
+        f"Scene: {scene['description']}. "
+        f"Narration: {scene['narration']}. "
+        f"Visual: {scene['visual_prompt']}. "
+        f"Lighting: {scene['lighting']}. "
+        f"Camera: {scene['camera_angle']}. "
+        f"Mood: {scene['mood']}."
+    )
+
+
+def generate_image_with_retry(prompt, reference_image_b64=None, strength=0.25):
     """
-    Generate an image with retry logic for throttling and content filter errors.
-    Returns raw image bytes on success, raises on permanent failure.
+    Generate an image with retry + content-filter rewrite logic.
+    - reference_image_b64: base64 PNG/JPEG string (no data URI prefix)
+    - strength: how much to deviate from the reference (0 = clone, 1 = ignore it)
     """
     max_retries = 10
     current_prompt = prompt
 
     for attempt in range(max_retries):
-        request_payload = build_request_payload(current_prompt, reference_image_b64)
+        if reference_image_b64:
+            payload = {
+                "prompt": current_prompt,
+                "mode": "image-to-image",
+                "image": reference_image_b64,
+                "strength": strength,
+                "output_format": "png",
+                "aspect_ratio": "16:9",
+            }
+        else:
+            payload = {
+                "prompt": current_prompt,
+                "mode": "text-to-image",
+                "aspect_ratio": "16:9",
+            }
 
         try:
-            response = bedrock_client.invoke_model(
+            response = bedrock.invoke_model(
                 modelId="stability.sd3-5-large-v1:0",
-                body=json.dumps(request_payload)
+                body=json.dumps(payload)
             )
-            response_body = json.loads(response["body"].read())
-            image_bytes = base64.b64decode(response_body["images"][0])
-            return image_bytes
+            body = json.loads(response["body"].read())
+            return base64.b64decode(body["images"][0])
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
 
             if error_code == "ValidationException":
-                print(f"⚠️ Content filter triggered on attempt {attempt + 1}. Rewriting prompt with Claude...")
+                print(f"⚠️  Content filter on attempt {attempt + 1}. Rewriting with Claude...")
                 current_prompt = rewrite_prompt_with_claude(current_prompt)
-                # If image-to-image keeps failing after rewrite, fall back to text-to-image
-                # on the next attempt to rule out the reference image as the cause
+                # After 3 strikes, drop the reference image — it may be the trigger
                 if attempt >= 3 and reference_image_b64:
-                    print("⚠️ Falling back to text-to-image after repeated content filter hits.")
+                    print("⚠️  Dropping reference image after repeated filter hits.")
                     reference_image_b64 = None
 
             elif error_code == "ThrottlingException":
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
-                print(f"⏳ Throttled on attempt {attempt + 1}. Retrying in {wait_time:.2f}s...")
-                time.sleep(wait_time)
+                wait = (2 ** attempt) + random.uniform(0, 1)
+                print(f"⏳  Throttled. Retrying in {wait:.1f}s...")
+                time.sleep(wait)
 
             else:
-                print(f"❌ Permanent error: {error_code} — {e.response['Error']['Message']}")
                 raise e
 
-    raise RuntimeError(f"Failed to generate image after {max_retries} attempts.")
+    raise RuntimeError(f"Image generation failed after {max_retries} attempts.")
+
+
+def composite_reference_images(image_b64_list):
+    """
+    Merge multiple character reference images into one composite before
+    passing to the scene generator. Simple horizontal concatenation via
+    Pillow — keeps all characters 'known' to the model at once.
+
+    Returns base64 PNG string, or None if PIL is unavailable.
+    """
+    try:
+        from PIL import Image
+        import io
+
+        images = [Image.open(io.BytesIO(base64.b64decode(b))) for b in image_b64_list]
+        total_width = sum(img.width for img in images)
+        max_height = max(img.height for img in images)
+
+        composite = Image.new("RGB", (total_width, max_height), (255, 255, 255))
+        x_offset = 0
+        for img in images:
+            composite.paste(img, (x_offset, 0))
+            x_offset += img.width
+
+        buf = io.BytesIO()
+        composite.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    except ImportError:
+        print("⚠️  Pillow not installed — using first character reference only.")
+        return image_b64_list[0] if image_b64_list else None
 
 
 def process_video_generation():
-    # 1. Environment Configuration
     source_bucket = os.environ.get("SOURCE_BUCKET", "canyouimagine-video-assets")
     target_bucket = os.environ.get("TARGET_BUCKET", "canyouimagine-video-images")
-    event_str = os.getenv("EVENT_DATA", "{}")
-    event = json.loads(event_str)
+    event = json.loads(os.getenv("EVENT_DATA", "{}"))
 
     s3_key = event.get("scene_output", {}).get("s3_key")
     if not s3_key:
         raise ValueError("No s3_key found in input event")
 
-    # 2. Load the original JSON from S3
-    print(f"Fetching input from: {s3_key}")
     response = s3.get_object(Bucket=source_bucket, Key=s3_key)
-    data = json.loads(response['Body'].read())
+    data = json.loads(response["body"].read())
     request_id = data["request_id"]
+    characters = {c["name"]: c for c in data["context"]["characters"]}
 
-    # 3. Iterate through scenes — carry the previous scene's image as a reference
-    previous_scene_image_b64 = None  # None for scene 1 (pure text-to-image)
+    # ── Phase 1: Generate one reference sheet image per character ────────────
+    print("\n📸  Generating character reference sheets...")
+    character_refs = {}  # name → base64 PNG string
+
+    for char_name, char in characters.items():
+        print(f"  → {char_name}")
+        ref_prompt = build_character_description_prompt(char)
+        image_bytes = generate_image_with_retry(ref_prompt)
+
+        # Save reference sheet to S3 for debugging / reuse
+        ref_key = f"outputs/{request_id}/refs/{char_name.replace(' ', '_')}.png"
+        s3.put_object(Bucket=target_bucket, Key=ref_key,
+                      Body=image_bytes, ContentType="image/png")
+
+        character_refs[char_name] = base64.b64encode(image_bytes).decode("utf-8")
+        print(f"  ✅  {char_name} reference saved → {ref_key}")
+
+    # ── Phase 2: Generate scene images using character refs as anchors ────────
+    print("\n🎬  Generating scenes...")
 
     for scene in data["scenes"]:
         scene_num = scene["scene_number"]
-        print(f"\n🎬 Generating scene {scene_num}: {scene['title']}")
+        scene_chars = scene.get("characters", [])
+        print(f"\n  Scene {scene_num}: {scene['title']} — characters: {scene_chars}")
 
-        consistent_prompt = f"""
-            Cinematic digital illustration of
-            Narration scene: {scene['narration']}
-            Visual Prompt: {scene['visual_prompt']}
-            Scene Description: {scene['description']}
-            Lighting: {scene['lighting']}
-            Camera angle: {scene['camera_angle']}
-            Mood: {scene['mood']}
-        """
+        # Build a composite of only the characters that appear in this scene.
+        # This keeps the reference tight — don't inject irrelevant characters.
+        refs_for_scene = [character_refs[c] for c in scene_chars if c in character_refs]
 
-        # Scene 1 → text-to-image. Scene 2+ → image-to-image using previous scene.
+        if len(refs_for_scene) > 1:
+            reference_image = composite_reference_images(refs_for_scene)
+        elif len(refs_for_scene) == 1:
+            reference_image = refs_for_scene[0]
+        else:
+            reference_image = None  # No named characters in scene
+
+        scene_prompt = build_scene_prompt(scene)
+
+        # strength=0.35 lets the scene diverge enough from the reference-sheet
+        # pose/background while still anchoring the character's appearance.
         image_bytes = generate_image_with_retry(
-            bedrock_client=bedrock,
-            prompt=consistent_prompt,
-            reference_image_b64=previous_scene_image_b64
+            prompt=scene_prompt,
+            reference_image_b64=reference_image,
+            strength=0.35
         )
 
-        # 4. Save the generated image to S3
-        image_filename = f"outputs/{request_id}/scene_{scene_num}.png"
-        s3.put_object(
-            Bucket=target_bucket,
-            Key=image_filename,
-            Body=image_bytes,
-            ContentType='image/png'
-        )
-        scene["image_s3_path"] = f"s3://{target_bucket}/{image_filename}"
-        print(f"✅ Scene {scene_num} saved → {image_filename}")
+        image_key = f"outputs/{request_id}/scene_{scene_num}.png"
+        s3.put_object(Bucket=target_bucket, Key=image_key,
+                      Body=image_bytes, ContentType="image/png")
 
-        # 5. Encode this scene's image as base64 to feed into the next scene
-        previous_scene_image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        scene["image_s3_path"] = f"s3://{target_bucket}/{image_key}"
+        print(f"  ✅  Scene {scene_num} saved.")
 
-    # 6. Save the final JSON back to S3
-    final_json_key = f"outputs/{request_id}/final_scenes.json"
-    s3.put_object(
-        Bucket=target_bucket,
-        Key=final_json_key,
-        Body=json.dumps(data, indent=2),
-        ContentType='application/json'
-    )
+    # ── Phase 3: Write final JSON ────────────────────────────────────────────
+    final_key = f"outputs/{request_id}/final_scenes.json"
+    s3.put_object(Bucket=target_bucket, Key=final_key,
+                  Body=json.dumps(data, indent=2), ContentType="application/json")
 
     output = {
         "status": "Success",
-        "final_json_path": f"s3://{target_bucket}/{final_json_key}",
+        "final_json_path": f"s3://{target_bucket}/{final_key}",
         "s3_key": s3_key
     }
     print(json.dumps(output))
-    print(f"🚀 Task Finished. Final JSON: s3://{target_bucket}/{final_json_key}")
 
 
 if __name__ == "__main__":
