@@ -168,7 +168,7 @@ def process_video_generation():
     print(type(response))
     print(response)
     print("------------------------")
-    data = json.loads(response["body"].read())
+    data = json.loads(response["Body"].read())
     request_id = data["request_id"]
     characters = {c["name"]: c for c in data["context"]["characters"]}
 
