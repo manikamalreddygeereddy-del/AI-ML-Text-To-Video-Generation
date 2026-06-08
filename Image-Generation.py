@@ -84,8 +84,7 @@ def generate_image_with_retry(prompt, reference_image_b64=None, strength=0.25):
                 "mode": "image-to-image",
                 "image": reference_image_b64,
                 "strength": strength,
-                "output_format": "png",
-                "aspect_ratio": "16:9",
+                "output_format": "png"
             }
         else:
             payload = {
