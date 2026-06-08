@@ -192,6 +192,8 @@ def process_video_generation():
     # ── Phase 2: Generate scene images using character refs as anchors ────────
     print("\n🎬  Generating scenes...")
 
+    previous_scene_reference = None
+
     for scene in data["scenes"]:
         scene_num = scene["scene_number"]
         scene_chars = scene.get("characters", [])
@@ -205,6 +207,11 @@ def process_video_generation():
             reference_image = composite_reference_images(refs_for_scene)
         elif len(refs_for_scene) == 1:
             reference_image = refs_for_scene[0]
+
+        elif previous_scene_reference:
+            print("  ↪ No characters found. Using previous scene as reference.")
+            reference_image = previous_scene_reference
+
         else:
             reference_image = None  # No named characters in scene
 
@@ -217,6 +224,7 @@ def process_video_generation():
             reference_image_b64=reference_image,
             strength=0.35
         )
+        previous_scene_reference = base64.b64encode(image_bytes).decode("utf-8")
 
         image_key = f"outputs/{request_id}/scene_{scene_num}.png"
         s3.put_object(Bucket=target_bucket, Key=image_key,
