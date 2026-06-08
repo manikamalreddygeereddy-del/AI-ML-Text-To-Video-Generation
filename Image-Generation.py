@@ -165,7 +165,9 @@ def process_video_generation():
         raise ValueError("No s3_key found in input event")
 
     response = s3.get_object(Bucket=source_bucket, Key=s3_key)
-    print(json.loads(response))
+    print(type(response))
+    print(response)
+    print("------------------------")
     data = json.loads(response["body"].read())
     request_id = data["request_id"]
     characters = {c["name"]: c for c in data["context"]["characters"]}
