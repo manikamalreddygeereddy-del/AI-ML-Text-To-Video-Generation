@@ -105,7 +105,7 @@ def generate_image_with_retry(prompt, reference_image_b64=None, strength=0.25):
             error_code = e.response["Error"]["Code"]
 
             if error_code == "ValidationException":
-                print(f"⚠️  Content filter on attempt {attempt + 1}. Rewriting with Claude...")
+                print(f"⚠️  Content filter on attempt {attempt + 1}. Rewriting with Claude... {e.response}")
                 current_prompt = rewrite_prompt_with_claude(current_prompt)
                 # After 3 strikes, drop the reference image — it may be the trigger
                 if attempt >= 3 and reference_image_b64:
