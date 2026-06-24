@@ -7,8 +7,12 @@ import random
 import requests
 
 # NVIDIA API Configuration
-NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "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")
-NVIDIA_API_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-kontext-dev"
+NVIDIA_IMAGE_TO_IMAGE_API_KEY = os.environ.get("NVIDIA_IMAGE_TO_IMAGE_API_KEY", "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")
+NVIDIA_TEXT_TO_IMAGE_API_KEY = os.environ.get("NVIDIA_TEXT_TO_IMAGE_API_KEY", "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")
+
+# Different models for different purposes
+NVIDIA_TEXT_TO_IMAGE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-1-1-ultra"
+NVIDIA_IMAGE_TO_IMAGE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-kontext-dev"
 
 # Initialize clients
 s3 = boto3.client("s3")
@@ -28,24 +32,36 @@ def generate_image_nvidia(prompt, reference_image=None, aspect_ratio="16:9", ste
     Returns:
         Base64 encoded image string
     """
+    # Choose the appropriate endpoint and API key based on whether we have a reference image
+    if reference_image:
+        # Image-to-image model (requires reference image)
+        api_url = NVIDIA_IMAGE_TO_IMAGE_URL
+        api_key = NVIDIA_IMAGE_TO_IMAGE_API_KEY
+        payload = {
+            "prompt": prompt,
+            "image": f"data:image/png;base64,{reference_image}",
+            "aspect_ratio": aspect_ratio,
+            "steps": steps,
+            "cfg_scale": cfg_scale,
+            "seed": 0
+        }
+    else:
+        # Text-to-image model
+        api_url = NVIDIA_TEXT_TO_IMAGE_URL
+        api_key = NVIDIA_TEXT_TO_IMAGE_API_KEY
+        payload = {
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "seed": 0
+        }
+        # Note: Flux-1-1-ultra doesn't support steps and cfg_scale parameters
+
     headers = {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     }
 
-    payload = {
-        "prompt": prompt,
-        "aspect_ratio": aspect_ratio,
-        "steps": steps,
-        "cfg_scale": cfg_scale,
-        "seed": 0
-    }
-
-    # Add reference image if provided (for image-to-image)
-    if reference_image:
-        payload["image"] = f"data:image/png;base64,{reference_image}"
-
-    response = requests.post(NVIDIA_API_URL, headers=headers, json=payload)
+    response = requests.post(api_url, headers=headers, json=payload)
     response.raise_for_status()
     response_body = response.json()
 
