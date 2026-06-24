@@ -46,15 +46,29 @@ def generate_image_nvidia(prompt, reference_image=None, aspect_ratio="16:9", ste
             "seed": 0
         }
     else:
-        # Text-to-image model
+        # Text-to-image model (flux.1-dev)
         api_url = NVIDIA_TEXT_TO_IMAGE_URL
         api_key = NVIDIA_TEXT_TO_IMAGE_API_KEY
+
+        # Convert aspect ratio to width/height for flux.1-dev
+        # Standard resolutions based on aspect ratio
+        if aspect_ratio == "1:1":
+            width, height = 1024, 1024
+        elif aspect_ratio == "16:9":
+            width, height = 1024, 576
+        elif aspect_ratio == "13:7":
+            width, height = 1024, 553
+        else:
+            width, height = 1024, 576  # Default to 16:9
+
         payload = {
             "prompt": prompt,
-            "aspect_ratio": aspect_ratio,
+            "width": width,
+            "height": height,
+            "guidance_scale": cfg_scale,
+            "num_inference_steps": steps,
             "seed": 0
         }
-        # Note: Flux-1-1-ultra doesn't support steps and cfg_scale parameters
 
     headers = {
         "Authorization": f"Bearer {api_key}",
