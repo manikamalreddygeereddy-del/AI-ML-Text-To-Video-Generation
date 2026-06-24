@@ -4,16 +4,69 @@ import base64
 import os
 import time
 import random
-from botocore.exceptions import ClientError
+import requests
+
+# NVIDIA API Configuration
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "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")
+NVIDIA_API_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-kontext-dev"
 
 # Initialize clients
 s3 = boto3.client("s3")
-bedrock = boto3.client(service_name="bedrock-runtime",
-    region_name="us-west-2")
 bedrock_claude = boto3.client(service_name="bedrock-runtime")
 
+def generate_image_nvidia(prompt, reference_image=None, aspect_ratio="16:9", steps=30, cfg_scale=3.5):
+    """
+    Generate image using NVIDIA API
+
+    Args:
+        prompt: Text prompt for image generation
+        reference_image: Base64 encoded image for image-to-image (optional)
+        aspect_ratio: Aspect ratio of output image
+        steps: Number of generation steps
+        cfg_scale: Configuration scale
+
+    Returns:
+        Base64 encoded image string
+    """
+    headers = {
+        "Authorization": f"Bearer {NVIDIA_API_KEY}",
+        "Accept": "application/json",
+    }
+
+    payload = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "steps": steps,
+        "cfg_scale": cfg_scale,
+        "seed": 0
+    }
+
+    # Add reference image if provided (for image-to-image)
+    if reference_image:
+        payload["image"] = f"data:image/png;base64,{reference_image}"
+
+    response = requests.post(NVIDIA_API_URL, headers=headers, json=payload)
+    response.raise_for_status()
+    response_body = response.json()
+
+    # Extract the base64 image from response
+    if "image" in response_body:
+        # Remove data URI prefix if present
+        image_data = response_body["image"]
+        if image_data.startswith("data:image"):
+            image_data = image_data.split(",", 1)[1]
+        return image_data
+    elif "images" in response_body and len(response_body["images"]) > 0:
+        image_data = response_body["images"][0]
+        if image_data.startswith("data:image"):
+            image_data = image_data.split(",", 1)[1]
+        return image_data
+    else:
+        raise ValueError(f"Unexpected response format: {response_body}")
+
+
 def rewrite_prompt_with_claude(original_prompt):
-    """Use Claude to sanitize the prompt for Titan Image Generator"""
+    """Use Claude to sanitize the prompt for Image Generator"""
     rewrite_instruction = f"""
     Rewrite the following image generation prompt to ensure it is completely safe,
     non-violent, non-sensitive, and compliant with AI content policies.
@@ -95,43 +148,43 @@ def process_video_generation():
         High quality cinematic illustration.
         """
 
-        payload = {
-            "prompt": character_prompt,
-            "mode": "text-to-image",
-            "aspect_ratio": "1:1"
-        }
-
         max_retries = 10
-        image_response = None
+        image_base64 = None
+        current_prompt = character_prompt
+
         for attempt in range(max_retries):
             try:
-                response = bedrock.invoke_model(
-                    modelId="stability.sd3-5-large-v1:0",
-                    body=json.dumps(payload)
+                image_base64 = generate_image_nvidia(
+                    prompt=current_prompt,
+                    aspect_ratio="1:1",
+                    steps=30,
+                    cfg_scale=3.5
                 )
                 break
-            except ClientError as e:
-                error_code = e.response["Error"]["Code"]
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Content filter or validation error
+                    print(f"⚠️ Content filter triggered. Rewriting with Claude...{current_prompt}")
+                    print(f"Response: {e.response.text}")
+                    safe_prompt = rewrite_prompt_with_claude(current_prompt)
+                    current_prompt = safe_prompt
 
-                if error_code == "ValidationException":
-                    print(f"⚠️ Content filter triggered. Rewriting with Claude...{character_prompt}")
-                    print(f"{e.response}")
-                    safe_prompt = rewrite_prompt_with_claude(character_prompt)
-                    payload["prompt"] = safe_prompt
-                    # Continues to next attempt loop with updated payload
-
-                elif error_code == "ThrottlingException":
+                elif e.response.status_code == 429:
+                    # Rate limiting
                     wait_time = (2 ** attempt) + random.uniform(0, 1)
                     print(f"⏳ Throttled. Retrying in {wait_time:.2f}s...")
                     time.sleep(wait_time)
 
                 else:
-                    print(f"❌ Permanent Error: {error_code}")
+                    print(f"❌ HTTP Error {e.response.status_code}: {e.response.text}")
                     raise e
+            except Exception as e:
+                print(f"❌ Error: {str(e)}")
+                raise e
 
-        body = json.loads(response["body"].read())
+        if not image_base64:
+            raise RuntimeError(f"Failed to generate character image after {max_retries} attempts")
 
-        image_base64 = body["images"][0]
         image_bytes = base64.b64decode(image_base64)
 
         character_key = (
@@ -263,24 +316,13 @@ def process_video_generation():
                         Cinematic style.
                         """
 
-                        merge_payload = {
-                            "prompt": merge_prompt,
-                            "mode": "image-to-image",
-                            "image": scene_reference,
-                            "strength": 0.20,
-                            "output_format": "png"
-                        }
-
-                        merge_response = bedrock.invoke_model(
-                            modelId="stability.sd3-5-large-v1:0",
-                            body=json.dumps(merge_payload)
+                        scene_reference = generate_image_nvidia(
+                            prompt=merge_prompt,
+                            reference_image=scene_reference,
+                            aspect_ratio="16:9",
+                            steps=30,
+                            cfg_scale=3.5
                         )
-
-                        merge_body = json.loads(
-                            merge_response["body"].read()
-                        )
-
-                        scene_reference = merge_body["images"][0]
                 reference_source = f"character:{first_char}"
 
         print(
@@ -289,59 +331,56 @@ def process_video_generation():
         )
 
 
-        if reference_image:
-            request_payload = {
-                "prompt": consistent_prompt,
-                "mode": "image-to-image",
-                "image": scene_reference,
-                "strength": 0.10,
-                "output_format": "png"
-            }
-        else:
-
-            request_payload = {
-                "prompt": consistent_prompt,
-                "mode": "text-to-image",
-                "aspect_ratio": "16:9",
-                "output_format": "png"
-            }
-
-
         # Handle Generation with Retry Logic
         max_retries = 10
-        image_response = None
+        image_base64 = None
+        current_prompt = consistent_prompt
 
         for attempt in range(max_retries):
             try:
-                image_response = bedrock.invoke_model(
-                    modelId="stability.sd3-5-large-v1:0",
-                    body=json.dumps(request_payload)
-                )
+                if reference_image:
+                    # Image-to-image generation with reference
+                    image_base64 = generate_image_nvidia(
+                        prompt=current_prompt,
+                        reference_image=scene_reference,
+                        aspect_ratio="16:9",
+                        steps=30,
+                        cfg_scale=3.5
+                    )
+                else:
+                    # Text-to-image generation
+                    image_base64 = generate_image_nvidia(
+                        prompt=current_prompt,
+                        aspect_ratio="16:9",
+                        steps=30,
+                        cfg_scale=3.5
+                    )
                 break
 
-            except ClientError as e:
-                error_code = e.response["Error"]["Code"]
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    # Content filter or validation error
+                    print(f"⚠️ Content filter triggered. Rewriting with Claude...{current_prompt}")
+                    print(f"Response: {e.response.text}")
+                    safe_prompt = rewrite_prompt_with_claude(current_prompt)
+                    current_prompt = safe_prompt
 
-                if error_code == "ValidationException":
-                    print(f"⚠️ Content filter triggered. Rewriting with Claude...{consistent_prompt}")
-                    print(f"{e.response}")
-                    safe_prompt = rewrite_prompt_with_claude(consistent_prompt)
-                    request_payload["prompt"] = safe_prompt
-                    # Continues to next attempt loop with updated payload
-
-                elif error_code == "ThrottlingException":
+                elif e.response.status_code == 429:
+                    # Rate limiting
                     wait_time = (2 ** attempt) + random.uniform(0, 1)
                     print(f"⏳ Throttled. Retrying in {wait_time:.2f}s...")
                     time.sleep(wait_time)
 
                 else:
-                    print(f"❌ Permanent Error: {error_code}")
+                    print(f"❌ HTTP Error {e.response.status_code}: {e.response.text}")
                     raise e
+            except Exception as e:
+                print(f"❌ Error: {str(e)}")
+                raise e
 
         # 4. Save the generated image
-        if image_response:
-            response_body = json.loads(image_response.get("body").read())
-            image_bytes = base64.b64decode(response_body.get("images")[0])
+        if image_base64:
+            image_bytes = base64.b64decode(image_base64)
 
             scene_num = scene["scene_number"]
             image_filename = f"outputs/{request_id}/scene_{scene_num}.png"
