@@ -11,7 +11,7 @@ NVIDIA_IMAGE_TO_IMAGE_API_KEY = os.environ.get("NVIDIA_IMAGE_TO_IMAGE_API_KEY", 
 NVIDIA_TEXT_TO_IMAGE_API_KEY = os.environ.get("NVIDIA_TEXT_TO_IMAGE_API_KEY", "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")
 
 # Different models for different purposes
-NVIDIA_TEXT_TO_IMAGE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-1-1-ultra"
+NVIDIA_TEXT_TO_IMAGE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev"
 NVIDIA_IMAGE_TO_IMAGE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-kontext-dev"
 
 # Initialize clients
